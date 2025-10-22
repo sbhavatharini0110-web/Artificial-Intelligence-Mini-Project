@@ -1,0 +1,176 @@
+import random
+import math
+import time
+from queue import PriorityQueue
+from collections import defaultdict
+import matplotlib.pyplot as plt
+
+# ---------- PARAMETERS ----------
+N = 200        # number of nodes (increase for stronger effect)
+k = 6          # connect each node to its k nearest neighbors
+SEED = 42      # reproducible
+random.seed(SEED)
+
+# ---------- CREATE RANDOM 2D NODES ----------
+nodes = [f"n{i}" for i in range(N)]
+coords = {nodes[i]: (random.random()*100, random.random()*100) for i in range(N)}
+
+def euclid(a, b):
+    (x1, y1), (x2, y2) = coords[a], coords[b]
+    return math.hypot(x1 - x2, y1 - y2)
+
+# ---------- BUILD GRAPH: connect to k nearest neighbors ----------
+graph = {n: {} for n in nodes}
+for a in nodes:
+    dists = [(euclid(a, b), b) for b in nodes if a != b]
+    dists.sort(key=lambda x: x[0])
+    for dist, b in dists[:k]:
+        graph[a][b] = dist
+        graph[b][a] = dist  # undirected
+
+# ---------- SEARCH ALGORITHMS ----------
+def a_star(graph, start, goal, heuristic):
+    open_pq = PriorityQueue()
+    open_pq.put((heuristic[start], start))
+    g = {n: float("inf") for n in graph}
+    g[start] = 0
+    came_from = {}
+    closed = set()
+    expanded = 0
+
+    while not open_pq.empty():
+        _, current = open_pq.get()
+        if current in closed:
+            continue
+        closed.add(current)
+        expanded += 1
+
+        if current == goal:
+            path = []
+            node = goal
+            while node in came_from:
+                path.append(node)
+                node = came_from[node]
+            path.append(start)
+            return list(reversed(path)), g[goal], expanded
+
+        for nbr, w in graph[current].items():
+            tentative = g[current] + w
+            if tentative < g[nbr]:
+                g[nbr] = tentative
+                came_from[nbr] = current
+                f = tentative + heuristic[nbr]
+                open_pq.put((f, nbr))
+    return None, float('inf'), expanded
+
+def dijkstra(graph, start, goal):
+    pq = PriorityQueue()
+    pq.put((0, start))
+    g = {n: float("inf") for n in graph}
+    g[start] = 0.0   # Ensure this is a float
+    came_from = {}
+    visited = set()
+    expanded = 0
+
+    while not pq.empty():
+        dist, current = pq.get()
+        if current in visited:
+            continue
+        visited.add(current)
+        expanded += 1
+
+        if current == goal:
+            # reconstruct path
+            path = []
+            node = goal
+            while node in came_from:
+                path.append(node)
+                node = came_from[node]
+            path.append(start)
+            return list(reversed(path)), g[goal], expanded
+
+        for nbr, w in graph[current].items():
+            tentative = g[current] + float(w)   # ✅ make sure w is a float
+            if tentative < g[nbr]:
+                g[nbr] = tentative
+                came_from[nbr] = current
+                pq.put((tentative, nbr))
+                
+    return None, float('inf'), expanded
+
+# ---------- USER INPUT ----------
+print("\nAvailable nodes:")
+print(", ".join(nodes[:20]), "...")  # Show first 20 nodes for preview
+print("Total nodes:", len(nodes))
+
+start = input("\nEnter START node (e.g., n0): ").strip()
+goal = input("Enter GOAL node (e.g., n199): ").strip()
+
+if start not in graph or goal not in graph:
+    print("\n⚠️ Invalid node name! Please choose valid node IDs like 'n0' to 'n199'.")
+    exit()
+
+# ---------- ADMISSIBLE HEURISTIC ----------
+heuristic = {n: euclid(n, goal) for n in nodes}
+
+# ---------- RUN BOTH ----------
+t0 = time.time()
+path_a, cost_a, exp_a = a_star(graph, start, goal, heuristic)
+t_a = time.time() - t0
+
+t0 = time.time()
+path_d, cost_d, exp_d = dijkstra(graph, start, goal)
+t_d = time.time() - t0
+
+# ---------- PRINT COMPARISON ----------
+print("\n--- Algorithm Performance Comparison ---")
+print(f"{'Algorithm':<12}{'Cost':<10}{'Time (ms)':<12}{'Nodes Expanded':<15}{'Path length'}")
+print("-"*70)
+print(f"{'A*':<12}{cost_a:<10.3f}{t_a*1000:<12.3f}{exp_a:<15}{len(path_a) if path_a else 'N/A'}")
+print(f"{'Dijkstra':<12}{cost_d:<10.3f}{t_d*1000:<12.3f}{exp_d:<15}{len(path_d) if path_d else 'N/A'}")
+
+if t_a < t_d:
+    print("\n✅ A* was faster in time.")
+else:
+    print("\n⚙️ Dijkstra was faster in time (try increasing N or k).")
+
+if exp_a < exp_d:
+    print("✅ A* expanded fewer nodes (better heuristic guidance).")
+else:
+    print("⚙️ A* expanded more nodes (weaker heuristic or small graph).")
+
+# ---------- VISUALIZATION ----------
+def draw_graph_and_path(coords, graph, path, start_node, goal_node, title="A* Path Visualization"):
+    plt.figure(figsize=(12, 8))
+    
+    for u, neighbors in graph.items():
+        x1, y1 = coords[u]
+        for v in neighbors:
+            x2, y2 = coords[v]
+            plt.plot([x1, x2], [y1, y2], 'k-', alpha=0.1, linewidth=0.5)
+
+    all_x = [coords[n][0] for n in coords]
+    all_y = [coords[n][1] for n in coords]
+    plt.scatter(all_x, all_y, s=20, c='blue', label='All Nodes', zorder=2)
+    
+    if path:
+        path_x = [coords[n][0] for n in path]
+        path_y = [coords[n][1] for n in path]
+        plt.plot(path_x, path_y, 'r-', linewidth=3, label='A* Path', zorder=3)
+        
+    start_x, start_y = coords[start_node]
+    goal_x, goal_y = coords[goal_node]
+    plt.scatter([start_x], [start_y], s=100, c='lime', edgecolors='black', label='Start', zorder=4)
+    plt.scatter([goal_x], [goal_y], s=100, marker='s', c='red', edgecolors='black', label='Goal', zorder=4)
+
+    plt.title(title + f"\nNodes: {N}, k: {k}, Cost: {cost_a:.2f}")
+    plt.xlabel('X Coordinate')
+    plt.ylabel('Y Coordinate')
+    plt.legend()
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.show()
+
+if path_a:
+    draw_graph_and_path(coords, graph, path_a, start, goal)
+else:
+    print("\nCannot visualize: A* failed to find a path.")
